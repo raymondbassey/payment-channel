@@ -170,51 +170,52 @@
         ERR-CHANNEL-NOT-FOUND
       ))
       (total-channel-funds (get total-deposited channel))
-      (message (concat 
-        (concat 
-          channel-id
-          (uint-to-buff balance-a)
-        )
-        (uint-to-buff balance-b)
-      ))
     )
+    ;; Basic validations first
     (asserts! (is-valid-channel-id channel-id) ERR-INVALID-INPUT)
     (asserts! (is-valid-signature signature-a) ERR-INVALID-INPUT)
     (asserts! (is-valid-signature signature-b) ERR-INVALID-INPUT)
     (asserts! (not (is-eq tx-sender participant-b)) ERR-INVALID-INPUT)
     (asserts! (get is-open channel) ERR-CHANNEL-CLOSED)
+    (asserts! (is-eq total-channel-funds (+ balance-a balance-b)) ERR-INSUFFICIENT-FUNDS)
+    
+    (let
+      (
+        (message (concat 
+          (concat 
+            channel-id
+            (uint-to-buff balance-a)
+          )
+          (uint-to-buff balance-b)
+        ))
+      )
+      
+      (asserts! 
+        (and 
+          (verify-signature message signature-a tx-sender)
+          (verify-signature message signature-b participant-b)
+        ) 
+        ERR-INVALID-SIGNATURE
+      )
+      (try! (as-contract (stx-transfer? balance-a tx-sender tx-sender)))
+      (try! (as-contract (stx-transfer? balance-b tx-sender participant-b)))
 
-    (asserts! 
-      (and 
-        (verify-signature message signature-a tx-sender)
-        (verify-signature message signature-b participant-b)
-      ) 
-      ERR-INVALID-SIGNATURE
+      (map-set payment-channels 
+        {
+          channel-id: channel-id, 
+          participant-a: tx-sender, 
+          participant-b: participant-b
+        }
+        (merge channel {
+          is-open: false,
+          balance-a: u0,
+          balance-b: u0,
+          total-deposited: u0
+        })
+      )
+
+      (ok true)
     )
-
-    (asserts! 
-      (is-eq total-channel-funds (+ balance-a balance-b)) 
-      ERR-INSUFFICIENT-FUNDS
-    )
-
-    (try! (as-contract (stx-transfer? balance-a tx-sender tx-sender)))
-    (try! (as-contract (stx-transfer? balance-b tx-sender participant-b)))
-
-    (map-set payment-channels 
-      {
-        channel-id: channel-id, 
-        participant-a: tx-sender, 
-        participant-b: participant-b
-      }
-      (merge channel {
-        is-open: false,
-        balance-a: u0,
-        balance-b: u0,
-        total-deposited: u0
-      })
-    )
-
-    (ok true)
   )
 )
 
@@ -267,7 +268,7 @@
         participant-b: participant-b
       }
       (merge channel {
-        dispute-deadline: (+ block-height u1008),
+        dispute-deadline: (+ stacks-block-height u1008),
         balance-a: proposed-balance-a,
         balance-b: proposed-balance-b
       })
@@ -298,7 +299,7 @@
     (asserts! (is-valid-channel-id channel-id) ERR-INVALID-INPUT)
     (asserts! (not (is-eq tx-sender participant-b)) ERR-INVALID-INPUT)
     (asserts! 
-      (>= block-height (get dispute-deadline channel)) 
+      (>= stacks-block-height (get dispute-deadline channel)) 
       ERR-DISPUTE-PERIOD
     )
 
